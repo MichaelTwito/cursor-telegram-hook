@@ -1,0 +1,13 @@
+{
+  "enabled": false,
+  "wait_seconds": 120,
+  "poll_interval": 10,
+  "max_loops": 3,
+  "language": "en",
+  "telegram_chat_id": null,
+  "telegram_api_id": null,
+  "telegram_api_hash": null,
+  "telegram_session_string": null,
+  "message_prefix": "🤖 Cursor:",
+  "stop_words": ["stop", "exit", "quit", "עצור", "יציאה"]
+}
