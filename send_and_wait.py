@@ -4,7 +4,10 @@
 # dependencies = ["telethon"]
 # ///
 """
-Polls Telegram Saved Messages for a reply newer than a given timestamp.
+Sends a formatted summary to Telegram and polls for a reply.
+
+Usage:
+  uv run send_and_wait.py --config config.json --summary "What happened"
 
 Exit codes:
   0 — reply found (text printed to stdout)
@@ -17,49 +20,61 @@ import json
 import sys
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 
 from telethon.sessions import StringSession
 from telethon.sync import TelegramClient
 
 
-def load_config(config_path: str) -> dict:
-    with open(config_path) as f:
+def load_config(path: str) -> dict:
+    with open(path) as f:
         return json.load(f)
 
 
-def poll(config_path: str, after_ts: float) -> int:
+def run(config_path: str, summary: str) -> int:
     cfg = load_config(config_path)
 
     api_id = int(cfg["telegram_api_id"])
     api_hash = cfg["telegram_api_hash"]
     session_string = cfg["telegram_session_string"]
     chat_id = int(cfg["telegram_chat_id"])
-    prefix = cfg.get("message_prefix", "Cursor:")
+    prefix = cfg.get("message_prefix", "\U0001f916 Cursor:")
     stop_words = [w.lower() for w in cfg.get("stop_words", [])]
     wait_seconds = cfg.get("wait_seconds", 120)
     poll_interval = cfg.get("poll_interval", 10)
 
-    after_dt = datetime.fromtimestamp(after_ts, tz=timezone.utc)
-    deadline = time.monotonic() + wait_seconds
+    message = (
+        "\U0001f916 **Cursor Update**\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        f"{summary}\n"
+        "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+        "\U0001f4ac Reply here to send instructions"
+    )
 
     client = TelegramClient(StringSession(session_string), api_id, api_hash)
     client.connect()
 
     try:
         if not client.is_user_authorized():
-            print("ERROR: Session not authorized. Re-run session_string_generator.py", file=sys.stderr)
+            print("ERROR: Session not authorized", file=sys.stderr)
             return 1
 
+        client.send_message(chat_id, message)
+        send_time = datetime.now(timezone.utc)
+        deadline = time.monotonic() + wait_seconds
+
         while time.monotonic() < deadline:
-            messages = client.get_messages(chat_id, limit=5)
-            for msg in messages:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(poll_interval, remaining))
+
+            for msg in client.get_messages(chat_id, limit=5):
                 if msg.date is None or msg.text is None:
                     continue
                 msg_utc = msg.date.replace(tzinfo=timezone.utc) if msg.date.tzinfo is None else msg.date
-                if msg_utc <= after_dt:
+                if msg_utc <= send_time:
                     continue
-                if msg.text.startswith(prefix) or msg.text.startswith("🤖"):
+                if msg.text.startswith(prefix) or msg.text.startswith("\U0001f916"):
                     continue
 
                 text = msg.text.strip()
@@ -69,11 +84,6 @@ def poll(config_path: str, after_ts: float) -> int:
 
                 print(text)
                 return 0
-
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            time.sleep(min(poll_interval, remaining))
     finally:
         client.disconnect()
 
@@ -81,12 +91,11 @@ def poll(config_path: str, after_ts: float) -> int:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Poll Telegram for a reply")
+    parser = argparse.ArgumentParser(description="Send Telegram summary and wait for reply")
     parser.add_argument("--config", required=True, help="Path to config.json")
-    parser.add_argument("--after-timestamp", required=True, type=float, help="UNIX timestamp; only messages after this are considered")
+    parser.add_argument("--summary", required=True, help="Summary text to send")
     args = parser.parse_args()
-
-    sys.exit(poll(args.config, args.after_timestamp))
+    sys.exit(run(args.config, args.summary))
 
 
 if __name__ == "__main__":

@@ -16,68 +16,17 @@ from pathlib import Path
 
 PLUGIN_DIR = Path(__file__).parent
 CONFIG_PATH = PLUGIN_DIR / "config.json"
-WAIT_SCRIPT = PLUGIN_DIR / "wait_for_reply.py"
+SEND_SCRIPT = PLUGIN_DIR / "send_and_wait.py"
 SKILL_SRC = PLUGIN_DIR / "skill" / "SKILL.md"
 
 RULE_TEMPLATE = '''---
-description: Telegram hook with slash command control
+description: Telegram hook
 alwaysApply: {always_apply}
 ---
-
-# Telegram Response Hook
-
-## Slash Commands (check FIRST, before anything else)
-
-Before doing anything, check if the user's message is one of these commands:
-
-- `/telegram_on` — Enable the hook. Read `{config_path}`, set `"enabled"` to `true`, write it back. Reply "Telegram hook is now ON. I'll send summaries after each response." Then stop — do not run the hook flow for this message.
-
-- `/telegram_off` — Disable the hook. Read `{config_path}`, set `"enabled"` to `false`, write it back. Reply "Telegram hook is now OFF." Then stop.
-
-- `/telegram_status` — Read `{config_path}` and report the current settings (enabled, language, wait time, poll interval). Then stop.
-
-- `/telegram_lang_he` — Set `"language"` to `"he"` in config. Reply confirming. Then stop.
-
-- `/telegram_lang_en` — Set `"language"` to `"en"` in config. Reply confirming. Then stop.
-
-If the message is NOT a slash command, continue below.
-
-## Post-response Hook
-
-After completing your answer to the user's (non-command) message:
-
-1. Read `{config_path}` and parse the JSON.
-2. If `"enabled"` is `false`, **skip the entire hook** — do nothing more.
-3. Note the `"language"` field.
-
-### Flow (only if enabled)
-
-1. **Send run summary to Telegram**: Use the `user-telegram-mcp` MCP server's `send_message` tool to send a summary of **everything you did in this run** to chat_id `{chat_id}`. Format the message like this:
-
-   ```
-   🤖 **Cursor Update**
-   ━━━━━━━━━━━━━━━
-   <2-4 sentence summary covering: what the user asked, what you did, the outcome>
-   ━━━━━━━━━━━━━━━
-   💬 Reply here to send instructions
-   ```
-
-   Use Telegram markdown: **bold** for the header.
-
-   **Language**: If `language` is `he`, write the entire summary in Hebrew. If `en`, write in English.
-
-2. **Get current timestamp**: Use Shell tool to run `python3 -c "import time; print(int(time.time()))"` and capture the UNIX timestamp. Call it `SEND_TS`.
-
-3. **Wait for reply**: Run the polling script via Shell tool:
-   ```
-   uv run {wait_script} --config {config_path} --after-timestamp SEND_TS
-   ```
-   Set `block_until_ms` to `{block_ms}`. The script polls Telegram every {poll_interval}s and exits as soon as a reply arrives.
-
-4. **Check the result** based on the exit code:
-   - **Exit 0** — stdout contains the reply text. Treat it as a new user instruction. Execute it fully, then repeat from step 1 (max {max_loops} loops total).
-   - **Exit 1** — timeout, no reply received. Stop.
-   - **Exit 2** — stop word received. Stop immediately.
+After responding, read `{config_path}`. If enabled=false, stop.
+If enabled=true: write a 2-sentence summary of what you did (language: {language}; en=English, he=Hebrew), then run:
+`uv run {send_script} --config {config_path} --summary "<your summary>"`
+Set block_until_ms to {block_ms}. Exit 0: stdout=reply, execute it and loop (max {max_loops}). Exit 1: done. Exit 2: done.
 '''
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -251,9 +200,10 @@ def setup_preferences(cfg):
 # ─── Step 7: Install MCP Config ──────────────────────────────────────────────
 
 def install_mcp_config(cfg, telegram_mcp_dir):
-    header("Step 7: Install MCP Server in Cursor")
+    header("Step 7: Install MCP Server in Cursor (optional)")
     print("  Adding telegram-mcp to ~/.cursor/mcp.json")
-    print("  This lets Cursor send Telegram messages.\n")
+    print("  Note: the hook sends messages directly via Telethon (no MCP needed).")
+    print("  The MCP server is optional — useful for manual Telegram actions in chat.\n")
 
     mcp_path = Path.home() / ".cursor" / "mcp.json"
 
@@ -302,11 +252,7 @@ def install_cursor_assets(cfg):
     rule_content = RULE_TEMPLATE.format(
         always_apply=str(always_apply).lower(),
         config_path=str(CONFIG_PATH),
-        wait_script=str(WAIT_SCRIPT),
-        chat_id=cfg.get("telegram_chat_id", "YOUR_CHAT_ID"),
-        prefix=cfg.get("message_prefix", "🤖 Cursor:"),
-        wait_seconds=cfg["wait_seconds"],
-        poll_interval=cfg.get("poll_interval", 10),
+        send_script=str(SEND_SCRIPT),
         block_ms=block_ms,
         max_loops=cfg["max_loops"],
         language=cfg.get("language", "en"),

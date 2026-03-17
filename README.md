@@ -75,15 +75,21 @@ You ask Cursor a question
         |
    Cursor answers
         |
-   🤖 Sends formatted summary ──────> You see it on Telegram
+   Writes 2-sentence summary
+        |
+   Runs: uv run send_and_wait.py --summary "..."
+        |   (1 Shell call — sends message + polls in one script)
+        |
+   Script sends 🤖 message ──────> You see it on Telegram
         |
    Polls every 10s (up to 120s)
-        |   (direct Telethon, no MCP overhead)
         |
    Reply arrives? ─── YES ──> Agent executes it ──> loops
         |
        NO (timeout) ──> Done
 ```
+
+The rule that triggers this is only **~60 tokens** (vs ~500 before). No MCP call needed for sending — everything is handled directly via Telethon in `send_and_wait.py`.
 
 ## Configuration
 
