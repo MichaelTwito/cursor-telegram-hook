@@ -272,6 +272,31 @@ def install_cursor_assets(cfg):
     else:
         print(f"  ⚠ Skill source not found at {SKILL_SRC} — skipped")
 
+# ─── Step 9: Claude Code hook ─────────────────────────────────────────────────
+
+def install_claude_code_hook():
+    header("Step 9: Install Claude Code Hook (optional)")
+    print("  Claude Code has a native 'Stop hook' that fires after every response")
+    print("  with zero token cost — no rule is needed in the context window.")
+    print()
+    choice = prompt("Install Stop hook into ~/.claude/settings.json? (y/n)", "n").lower()
+    if choice != "y":
+        print("  Skipped. Run later: python cursor-telegram-hook/install_claude_code.py install")
+        return
+
+    installer = PLUGIN_DIR / "install_claude_code.py"
+    if not installer.exists():
+        print(f"  ⚠ installer not found at {installer} — skipped")
+        return
+
+    import subprocess
+    result = subprocess.run([sys.executable, str(installer), "install"], capture_output=True, text=True)
+    if result.stdout:
+        print(result.stdout, end="")
+    if result.returncode != 0 and result.stderr:
+        print(f"  ⚠ {result.stderr.strip()}")
+
+
 # ─── Quick commands ───────────────────────────────────────────────────────────
 
 def toggle():
@@ -351,6 +376,9 @@ def main():
 
     # Step 8: Cursor rule + skill
     install_cursor_assets(cfg)
+
+    # Step 9: Claude Code hook
+    install_claude_code_hook()
 
     # Done
     print()

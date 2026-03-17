@@ -43,7 +43,7 @@ def run(config_path: str, summary: str) -> int:
     poll_interval = cfg.get("poll_interval", 10)
 
     message = (
-        "\U0001f916 **Cursor Update**\n"
+        "\U0001f916 **AI Update**\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
         f"{summary}\n"
         "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"

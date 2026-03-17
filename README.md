@@ -1,6 +1,6 @@
-# Cursor Telegram Hook
+# Cursor / Claude Code Telegram Hook
 
-Control Cursor IDE from your phone via Telegram. After each AI response, a summary is sent to your Telegram. Reply within the timeout to send follow-up instructions — no need to be at your computer.
+Control Cursor or Claude Code from your phone via Telegram. After each AI response, a summary is sent to your Telegram. Reply within the timeout to send follow-up instructions — no need to be at your computer.
 
 ## Setup (one-time, ~5 minutes)
 
@@ -29,6 +29,7 @@ The wizard walks you through everything:
 | 6 | Sets your wait timer, poll interval, language, etc. |
 | 7 | Installs the MCP server in `~/.cursor/mcp.json` |
 | 8 | Installs the Cursor rule and skill in your project |
+| 9 | *(Optional)* Installs the Claude Code Stop hook in `~/.claude/settings.json` |
 
 ### 3. Restart Cursor
 
@@ -70,12 +71,14 @@ python setup.py help     # All commands
 
 ## How It Works
 
+### Cursor
+
 ```
 You ask Cursor a question
         |
    Cursor answers
         |
-   Writes 2-sentence summary
+   Reads rule (~60 tokens), writes 2-sentence summary
         |
    Runs: uv run send_and_wait.py --summary "..."
         |   (1 Shell call — sends message + polls in one script)
@@ -89,7 +92,32 @@ You ask Cursor a question
        NO (timeout) ──> Done
 ```
 
-The rule that triggers this is only **~60 tokens** (vs ~500 before). No MCP call needed for sending — everything is handled directly via Telethon in `send_and_wait.py`.
+### Claude Code
+
+```
+Claude finishes responding
+        |
+   Stop hook fires automatically (0 token cost)
+        |
+   claude-hook.py reads transcript JSONL
+        |   → extracts last assistant message as summary
+        |
+   Runs: uv run send_and_wait.py --summary "..."
+        |
+   Script sends 🤖 message ──────> You see it on Telegram
+        |
+   Reply arrives? ─── YES ──> hook returns {"decision":"block","reason":"<reply>"}
+        |                      Claude Code continues with reply as next instruction
+       NO (timeout) ──> exit 0 — Claude stops normally
+```
+
+| | Cursor | Claude Code |
+|---|---|---|
+| Token cost | ~60 tokens (rule in context) | **0 tokens** (hook runs outside LLM) |
+| Summary source | Agent writes it | Extracted from transcript JSONL |
+| Trigger | Agent reads rule | Hook fires unconditionally |
+
+No MCP call needed for sending — everything is handled directly via Telethon in `send_and_wait.py`.
 
 ## Configuration
 
@@ -129,3 +157,20 @@ Then update `telegram_session_string` in `config.json` and re-run `python setup.
 **No Telegram messages**: Make sure `enabled` is `true` in config.json and the MCP server is running (check Cursor Settings > MCP).
 
 **Hook not triggering in chat**: Say "telegram on" or start a new chat. The rule loads when chats start.
+
+## Claude Code — Manual Hook Management
+
+If you skipped Step 9, manage the Claude Code hook directly:
+
+```bash
+# Install
+python cursor-telegram-hook/install_claude_code.py install
+
+# Check status
+python cursor-telegram-hook/install_claude_code.py status
+
+# Remove
+python cursor-telegram-hook/install_claude_code.py uninstall
+```
+
+The hook is installed in `~/.claude/settings.json` and applies to **all** Claude Code sessions globally. Enable/disable per-project by toggling `enabled` in `config.json`.
