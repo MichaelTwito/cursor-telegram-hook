@@ -4,10 +4,10 @@
   "poll_interval": 10,
   "max_loops": 3,
   "language": "en",
-  "telegram_chat_id": null,
-  "telegram_api_id": null,
-  "telegram_api_hash": null,
-  "telegram_session_string": null,
+  "telegram_chat_id": 929071872,
+  "telegram_api_id": "2040",
+  "telegram_api_hash": "b18441a1ff607e10a989891a5462e627",
+  "telegram_session_string": "1BJWap1sBuyZ6PveF-dX5NeJ8HeRWu2njMmRcrtcGsx6iG3iwwuHxvHkoK4cc_Zlp0JCO9wugtYDeEDyPz4159Ek9B7uTOqYl-r5PVbSYmnZAkk_EVzFEKVxQvXEsQkWQsJ58mTBskkCd6Wg-rhQ_zFN95O9oZtkNaH3KrDe1f6e_lFAxsrpfWX30-v1jzBfcq8ApOiLJXDAoEJ6Un_JSSjnPshcBmrCNr6EiyVrH6bz3k4Co57x4pxI9870NMiXh25ad8CWZ0l13B_OsM_xGc5aizQWvDHXxjcuiXch5rA_3rysOIPZYKdPepXGzABP9OQHuYQm6SBZEEVM-1JoWsAYV7rM1ljk=",
   "message_prefix": "🤖 Cursor:",
   "stop_words": ["stop", "exit", "quit", "עצור", "יציאה"]
 }

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["telethon"]
+# dependencies = []
 # ///
 """
-Sends a formatted summary to Telegram and polls for a reply.
+Sends a formatted summary to Telegram via a BotFather bot and polls for a reply.
+
+Reads the active bot from bots.json (resolves by CWD, falls back to first enabled bot).
 
 Usage:
   uv run send_and_wait.py --config config.json --summary "What happened"
@@ -19,26 +21,74 @@ import argparse
 import json
 import sys
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
-
-from telethon.sessions import StringSession
-from telethon.sync import TelegramClient
+from pathlib import Path
 
 
-def load_config(path: str) -> dict:
-    with open(path) as f:
-        return json.load(f)
+# ── Bot API helpers (no external deps) ───────────────────────────────────────
 
+BOT_API = "https://api.telegram.org/bot{token}/{method}"
+
+
+def _api(token: str, method: str, **params) -> dict:
+    url = BOT_API.format(token=token, method=method)
+    data = urllib.parse.urlencode(params).encode()
+    req = urllib.request.Request(url, data=data, method="POST")
+    req.add_header("Content-Type", "application/x-www-form-urlencoded")
+    try:
+        with urllib.request.urlopen(req, timeout=35) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        return {"ok": False, "description": exc.read().decode(errors="replace")}
+    except Exception as exc:
+        return {"ok": False, "description": str(exc)}
+
+
+# ── Registry helpers ──────────────────────────────────────────────────────────
+
+def _load_registry(config_path: str) -> dict:
+    bots_path = Path(config_path).parent / "bots.json"
+    if bots_path.exists():
+        with open(bots_path) as f:
+            return json.load(f)
+    return {"bots": []}
+
+
+def _resolve_bot(registry: dict) -> dict | None:
+    import os
+    cwd = os.getcwd()
+    for bot in registry.get("bots", []):
+        if bot.get("enabled") and bot.get("assigned_project") == cwd:
+            return bot
+    for bot in registry.get("bots", []):
+        if bot.get("enabled"):
+            return bot
+    return None
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
 
 def run(config_path: str, summary: str) -> int:
-    cfg = load_config(config_path)
+    with open(config_path) as f:
+        cfg = json.load(f)
 
-    api_id = int(cfg["telegram_api_id"])
-    api_hash = cfg["telegram_api_hash"]
-    session_string = cfg["telegram_session_string"]
-    chat_id = int(cfg["telegram_chat_id"])
-    prefix = cfg.get("message_prefix", "\U0001f916 Cursor:")
-    stop_words = [w.lower() for w in cfg.get("stop_words", [])]
+    registry = _load_registry(config_path)
+    bot = _resolve_bot(registry)
+
+    if bot is None:
+        print("ERROR: No enabled bot found in bots.json. Add a bot via the dashboard.", file=sys.stderr)
+        return 1
+
+    if not bot.get("chat_id"):
+        print(f"ERROR: Bot '{bot['name']}' has no chat_id. Send /start to it on Telegram first.", file=sys.stderr)
+        return 1
+
+    token = bot["token"]
+    chat_id = int(bot["chat_id"])
+    stop_words = {w.lower() for w in cfg.get("stop_words", [])}
     wait_seconds = cfg.get("wait_seconds", 120)
     poll_interval = cfg.get("poll_interval", 10)
 
@@ -50,42 +100,54 @@ def run(config_path: str, summary: str) -> int:
         "\U0001f4ac Reply here to send instructions"
     )
 
-    client = TelegramClient(StringSession(session_string), api_id, api_hash)
-    client.connect()
+    result = _api(token, "sendMessage", chat_id=chat_id, text=message, parse_mode="Markdown")
+    if not result.get("ok"):
+        print(f"ERROR: Failed to send message: {result.get('description')}", file=sys.stderr)
+        return 1
 
-    try:
-        if not client.is_user_authorized():
-            print("ERROR: Session not authorized", file=sys.stderr)
-            return 1
+    send_time = datetime.now(timezone.utc)
+    deadline = time.monotonic() + wait_seconds
 
-        client.send_message(chat_id, message)
-        send_time = datetime.now(timezone.utc)
-        deadline = time.monotonic() + wait_seconds
+    # Get current update offset to skip old messages
+    offset = 0
+    updates = _api(token, "getUpdates", timeout=0)
+    if updates.get("ok") and updates["result"]:
+        offset = updates["result"][-1]["update_id"] + 1
 
-        while time.monotonic() < deadline:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            time.sleep(min(poll_interval, remaining))
+    while time.monotonic() < deadline:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
 
-            for msg in client.get_messages(chat_id, limit=5):
-                if msg.date is None or msg.text is None:
-                    continue
-                msg_utc = msg.date.replace(tzinfo=timezone.utc) if msg.date.tzinfo is None else msg.date
-                if msg_utc <= send_time:
-                    continue
-                if msg.text.startswith(prefix) or msg.text.startswith("\U0001f916"):
-                    continue
+        long_poll = min(poll_interval, int(remaining))
+        updates = _api(token, "getUpdates", offset=offset, timeout=long_poll)
 
-                text = msg.text.strip()
-                if text.lower() in stop_words:
-                    print("STOP")
-                    return 2
+        if not updates.get("ok"):
+            time.sleep(2)
+            continue
 
-                print(text)
-                return 0
-    finally:
-        client.disconnect()
+        for update in updates.get("result", []):
+            offset = update["update_id"] + 1
+            msg = update.get("message") or update.get("channel_post")
+            if not msg:
+                continue
+            if msg.get("chat", {}).get("id") != chat_id:
+                continue
+
+            msg_dt = datetime.fromtimestamp(msg.get("date", 0), tz=timezone.utc)
+            if msg_dt <= send_time:
+                continue
+
+            text = (msg.get("text") or "").strip()
+            if not text:
+                continue
+
+            if text.lower() in stop_words:
+                print("STOP")
+                return 2
+
+            print(text)
+            return 0
 
     return 1
 

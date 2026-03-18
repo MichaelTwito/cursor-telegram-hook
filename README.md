@@ -2,175 +2,160 @@
 
 Control Cursor or Claude Code from your phone via Telegram. After each AI response, a summary is sent to your Telegram. Reply within the timeout to send follow-up instructions — no need to be at your computer.
 
-## Setup (one-time, ~5 minutes)
+Uses **Telegram bots** (created via @BotFather) — no user account or session string required.
 
-### 1. Copy the plugin
+## Quick Start
 
-```bash
-cp -r cursor-telegram-hook /path/to/your/project/
-```
-
-### 2. Run the setup wizard
+### 1. Run the setup wizard
 
 ```bash
 cd cursor-telegram-hook
 python setup.py
 ```
 
-The wizard walks you through everything:
-
-| Step | What it does |
-|------|-------------|
-| 1 | Checks prerequisites (`uv`, `git`, Python 3) |
-| 2 | Clones [telegram-mcp](https://github.com/chigwell/telegram-mcp) if missing |
-| 3 | Configures Telegram API credentials (defaults available) |
-| 4 | Guides you through generating a session string |
-| 5 | Asks for your Telegram user ID |
-| 6 | Sets your wait timer, poll interval, language, etc. |
-| 7 | Installs the MCP server in `~/.cursor/mcp.json` |
-| 8 | Installs the Cursor rule and skill in your project |
-| 9 | *(Optional)* Installs the Claude Code Stop hook in `~/.claude/settings.json` |
-
-### 3. Restart Cursor
-
-Restart Cursor IDE to load the new MCP server.
-
-### 4. Activate
-
-In any Cursor chat, say **"telegram on"** or type `/telegram_on`.
-
-## Usage
-
-### In Cursor Chat
-
-Say these in natural language or as commands:
-
-| Trigger | Action |
-|---------|--------|
-| `telegram on` / `/telegram_on` | Enable the hook |
-| `telegram off` / `/telegram_off` | Disable the hook |
-| `telegram status` / `/telegram_status` | Show current settings |
-| `telegram hebrew` / `/telegram_lang_he` | Switch summaries to Hebrew |
-| `telegram english` / `/telegram_lang_en` | Switch summaries to English |
-
-### In Terminal
+### 2. Launch the dashboard
 
 ```bash
-python setup.py on       # Enable
-python setup.py off      # Disable
-python setup.py toggle   # Toggle
-python setup.py status   # Show config
-python setup.py help     # All commands
+cd cursor-telegram-hook/dashboard
+pip install fastapi uvicorn jinja2
+python run.py
 ```
 
-### In Telegram
+Open **http://localhost:8080** — add bots, assign them to projects, and test them.
 
-- Reply to a Cursor message with any instruction
-- Cursor picks it up within 10 seconds and executes it
-- Reply `stop`, `exit`, `quit`, `עצור`, or `יציאה` to end the loop
+### 3. Install hooks
 
-## How It Works
+```bash
+# Claude Code stop hook (fires automatically after every response — 0 token cost)
+python install_claude_code.py install
 
-### Cursor
-
-```
-You ask Cursor a question
-        |
-   Cursor answers
-        |
-   Reads rule (~60 tokens), writes 2-sentence summary
-        |
-   Runs: uv run send_and_wait.py --summary "..."
-        |   (1 Shell call — sends message + polls in one script)
-        |
-   Script sends 🤖 message ──────> You see it on Telegram
-        |
-   Polls every 10s (up to 120s)
-        |
-   Reply arrives? ─── YES ──> Agent executes it ──> loops
-        |
-       NO (timeout) ──> Done
+# Telegram MCP tools (notify, ask, get_status — call mid-task from Claude Code)
+python telegram_mcp/install.py install
 ```
 
-### Claude Code
+Restart Claude Code to activate.
 
+---
+
+## Dashboard
+
+The local web dashboard at `http://localhost:8080` lets you:
+
+- **Add bots** — paste a token from @BotFather; the dashboard verifies it automatically
+- **Detect Chat ID** — send `/start` to your bot on Telegram, then click Detect
+- **Assign to project** — one bot per project directory; unassigned bots are the global fallback
+- **Test** — send a test message with one click
+- **Enable/disable** individual bots
+- **Global settings** — wait timeout, poll interval, language, stop words
+
+---
+
+## How bots are selected
+
+When a hook or MCP tool fires, the active bot is resolved:
+
+1. Bot with `assigned_project` matching the current working directory
+2. First enabled bot (global fallback)
+3. Error if no enabled bot exists
+
+---
+
+## Claude Code — Stop Hook
+
+The stop hook fires automatically after every Claude Code response with **zero token cost**. It extracts the last assistant message from the session transcript and sends it to your Telegram.
+
+```bash
+# Install
+python install_claude_code.py install
+
+# Check
+python install_claude_code.py status
+
+# Remove
+python install_claude_code.py uninstall
 ```
-Claude finishes responding
-        |
-   Stop hook fires automatically (0 token cost)
-        |
-   claude-hook.py reads transcript JSONL
-        |   → extracts last assistant message as summary
-        |
-   Runs: uv run send_and_wait.py --summary "..."
-        |
-   Script sends 🤖 message ──────> You see it on Telegram
-        |
-   Reply arrives? ─── YES ──> hook returns {"decision":"block","reason":"<reply>"}
-        |                      Claude Code continues with reply as next instruction
-       NO (timeout) ──> exit 0 — Claude stops normally
+
+---
+
+## Telegram MCP Tools
+
+Three tools available to Claude Code mid-task:
+
+### `notify(message)`
+Fire-and-forget notification.
+```
+Claude: Build complete!
+  → notify("Build finished: 0 errors, 2 warnings.")
 ```
 
-| | Cursor | Claude Code |
-|---|---|---|
-| Token cost | ~60 tokens (rule in context) | **0 tokens** (hook runs outside LLM) |
-| Summary source | Agent writes it | Extracted from transcript JSONL |
-| Trigger | Agent reads rule | Hook fires unconditionally |
+### `ask(message, timeout_seconds?, options?)`
+Send a message and wait for a reply. Useful for confirmation before destructive operations.
+```
+Claude: About to drop the users table.
+  → ask("Delete 3000 records? Reply YES to confirm.", options=["yes", "no"])
+User replies: "yes"
+Claude: Confirmed. Proceeding...
+```
 
-No MCP call needed for sending — everything is handled directly via Telethon in `send_and_wait.py`.
+### `get_status()`
+Check which bot is active for the current project.
+
+---
 
 ## Configuration
 
-Edit `config.json`:
+Edit `config.json` for global settings:
 
 | Field | Default | Description |
 |-------|---------|-------------|
 | `enabled` | `false` | Master toggle |
-| `wait_seconds` | `120` | Max time to wait for a reply |
-| `poll_interval` | `10` | Check for replies every N seconds |
-| `max_loops` | `3` | Max send-wait-read cycles |
-| `language` | `"en"` | Summary language: `"en"` or `"he"` |
-| `telegram_chat_id` | — | Your Telegram numeric user ID |
-| `message_prefix` | `"🤖 Cursor:"` | Identifies Cursor messages |
-| `stop_words` | `["stop","exit",...]` | Reply words that end the loop |
+| `wait_seconds` | `120` | Max wait for reply |
+| `poll_interval` | `10` | Check every N seconds |
+| `max_loops` | `3` | Max send-wait cycles (Cursor rule) |
+| `language` | `"en"` | Summary language: `en` or `he` |
+| `stop_words` | `["stop","exit",…]` | End the loop |
 
-## Prerequisites
+Bot credentials are in `bots.json` (managed by the dashboard — do not edit manually).
 
-- Python 3.10+
-- `uv` ([install](https://astral.sh/uv))
-- `git`
-- A Telegram account
+---
 
-The setup wizard handles everything else (cloning telegram-mcp, installing dependencies, etc).
+## Architecture
+
+```
+cursor-telegram-hook/
+  bots.json                  # bot pool registry
+  config.json                # global settings
+  send_and_wait.py           # used by claude-hook.py (stop hook)
+  claude-hook.py             # Claude Code stop hook (fires after every response)
+  install_claude_code.py     # installs stop hook into ~/.claude/settings.json
+  setup.py                   # Cursor setup wizard
+  telegram_mcp/
+    server.py                # MCP server (notify, ask, get_status)
+    bot_client.py            # Telegram Bot API wrapper
+    registry.py              # bot pool loader + resolver
+    config.py                # global config loader
+    install.py               # installs MCP server into ~/.claude/settings.json
+    pyproject.toml
+  dashboard/
+    app.py                   # FastAPI dashboard + REST API
+    templates/index.html     # single-page UI
+    run.py                   # uvicorn entry point
+```
+
+| Component | Token cost | Trigger |
+|---|---|---|
+| Stop hook (`claude-hook.py`) | 0 | Automatic after every response |
+| MCP tools (`server.py`) | ~50/call | Claude calls explicitly |
+| Cursor rule | ~60 always-on | Agent reads rule |
+
+---
 
 ## Troubleshooting
 
-**MCP server won't start**: Run `python setup.py` again to re-configure credentials. Then restart Cursor.
+**Bot not receiving messages**: Make sure you sent `/start` to the bot in Telegram, then click "Detect Chat ID" in the dashboard.
 
-**"Session not authorized"**: Your session string expired. Regenerate it:
-```bash
-cd ~/projects/telegram-mcp
-uv run session_string_generator.py
-```
-Then update `telegram_session_string` in `config.json` and re-run `python setup.py`.
+**"No enabled bot found"**: Add a bot in the dashboard and make sure it's enabled.
 
-**No Telegram messages**: Make sure `enabled` is `true` in config.json and the MCP server is running (check Cursor Settings > MCP).
+**Dashboard not starting**: `pip install fastapi uvicorn jinja2` and re-run `python run.py`.
 
-**Hook not triggering in chat**: Say "telegram on" or start a new chat. The rule loads when chats start.
-
-## Claude Code — Manual Hook Management
-
-If you skipped Step 9, manage the Claude Code hook directly:
-
-```bash
-# Install
-python cursor-telegram-hook/install_claude_code.py install
-
-# Check status
-python cursor-telegram-hook/install_claude_code.py status
-
-# Remove
-python cursor-telegram-hook/install_claude_code.py uninstall
-```
-
-The hook is installed in `~/.claude/settings.json` and applies to **all** Claude Code sessions globally. Enable/disable per-project by toggling `enabled` in `config.json`.
+**Claude Code hook not firing**: Run `python install_claude_code.py status` to verify installation. Restart Claude Code after installing.

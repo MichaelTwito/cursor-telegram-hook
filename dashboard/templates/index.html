@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Telegram Hook Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3350;
+      --accent: #5b9cf6;
+      --accent-dim: #3a6cd4;
+      --green: #34d399;
+      --red: #f87171;
+      --yellow: #fbbf24;
+      --text: #e2e8f0;
+      --muted: #8892a4;
+      --font: 'Inter', system-ui, sans-serif;
+      --mono: 'JetBrains Mono', 'Fira Code', monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; }
+
+    /* Layout */
+    .layout { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+    .sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 24px 0; position: fixed; width: 220px; height: 100vh; display: flex; flex-direction: column; }
+    .main { margin-left: 220px; padding: 32px; max-width: 960px; }
+
+    /* Sidebar */
+    .logo { padding: 0 20px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+    .logo-icon { font-size: 24px; }
+    .logo-text { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; }
+    .logo-sub { font-size: 11px; color: var(--muted); }
+    nav { padding: 16px 0; flex: 1; }
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 20px; cursor: pointer; color: var(--muted); font-size: 14px; transition: all .15s; border-left: 3px solid transparent; }
+    .nav-item:hover { color: var(--text); background: var(--surface2); }
+    .nav-item.active { color: var(--accent); border-left-color: var(--accent); background: rgba(91,156,246,.08); }
+    .nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
+    .status-pill { margin: 16px 20px 0; padding: 8px 12px; background: var(--surface2); border-radius: 8px; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+    .dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+    /* Sections */
+    .section { display: none; }
+    .section.active { display: block; }
+    .page-header { margin-bottom: 28px; }
+    .page-header h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+    .page-header p { color: var(--muted); font-size: 14px; margin-top: 4px; }
+
+    /* Cards */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+    .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .card-title { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+
+    /* Bot list */
+    .bot-grid { display: flex; flex-direction: column; gap: 12px; }
+    .bot-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; display: flex; align-items: center; gap: 16px; transition: border-color .15s; }
+    .bot-card:hover { border-color: var(--accent-dim); }
+    .bot-avatar { width: 42px; height: 42px; border-radius: 50%; background: var(--accent-dim); display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+    .bot-info { flex: 1; min-width: 0; }
+    .bot-name { font-size: 15px; font-weight: 600; }
+    .bot-meta { font-size: 12px; color: var(--muted); margin-top: 2px; display: flex; gap: 12px; flex-wrap: wrap; }
+    .bot-meta span { display: flex; align-items: center; gap: 4px; }
+    .bot-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+    /* Buttons */
+    .btn { padding: 7px 14px; border-radius: 7px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; transition: all .15s; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-dim); }
+    .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+    .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
+    .btn-danger { background: transparent; color: var(--red); border: 1px solid rgba(248,113,113,.3); }
+    .btn-danger:hover { background: rgba(248,113,113,.1); }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    .btn-icon { padding: 6px; border-radius: 6px; background: var(--surface2); border: 1px solid var(--border); cursor: pointer; color: var(--muted); transition: all .15s; }
+    .btn-icon:hover { color: var(--text); }
+
+    /* Tags / badges */
+    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+    .badge-green { background: rgba(52,211,153,.12); color: var(--green); }
+    .badge-red { background: rgba(248,113,113,.12); color: var(--red); }
+    .badge-blue { background: rgba(91,156,246,.12); color: var(--accent); }
+    .badge-yellow { background: rgba(251,191,36,.12); color: var(--yellow); }
+
+    /* Toggle */
+    .toggle { position: relative; display: inline-block; width: 36px; height: 20px; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; inset: 0; background: var(--border); border-radius: 20px; transition: .2s; }
+    .slider:before { content: ''; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: .2s; }
+    input:checked + .slider { background: var(--accent); }
+    input:checked + .slider:before { transform: translateX(16px); }
+
+    /* Forms */
+    .form-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+    .form-group { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 0; }
+    label { font-size: 12px; color: var(--muted); font-weight: 500; }
+    input, select, textarea { background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 9px 12px; color: var(--text); font-size: 14px; font-family: var(--font); width: 100%; outline: none; transition: border-color .15s; }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+    input.mono { font-family: var(--mono); font-size: 13px; }
+    textarea { resize: vertical; min-height: 80px; }
+
+    /* Divider */
+    hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+
+    /* Settings grid */
+    .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 640px) { .settings-grid { grid-template-columns: 1fr; } }
+
+    /* Toast */
+    .toast-container { position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 1000; }
+    .toast { padding: 12px 18px; border-radius: 8px; font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 20px rgba(0,0,0,.4); animation: slide-in .2s ease; }
+    .toast-success { background: #1a3d2e; color: var(--green); border: 1px solid rgba(52,211,153,.3); }
+    .toast-error { background: #3d1a1a; color: var(--red); border: 1px solid rgba(248,113,113,.3); }
+    @keyframes slide-in { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* Modal */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: none; align-items: center; justify-content: center; z-index: 500; }
+    .modal-overlay.open { display: flex; }
+    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 28px; width: 480px; max-width: 95vw; }
+    .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+
+    /* Empty state */
+    .empty { text-align: center; padding: 60px 20px; color: var(--muted); }
+    .empty-icon { font-size: 48px; margin-bottom: 12px; }
+    .empty h3 { font-size: 16px; color: var(--text); margin-bottom: 6px; }
+    .empty p { font-size: 13px; }
+
+    /* Code */
+    code { font-family: var(--mono); background: var(--surface2); padding: 2px 6px; border-radius: 4px; font-size: 12px; color: var(--accent); }
+    pre { font-family: var(--mono); background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; font-size: 12px; overflow-x: auto; white-space: pre-wrap; }
+
+    /* Project path chips */
+    .project-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 11px; }
+  </style>
+</head>
+<body>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">
+      <span class="logo-icon">🤖</span>
+      <div>
+        <div class="logo-text">Telegram Hook</div>
+        <div class="logo-sub">Dashboard</div>
+      </div>
+    </div>
+    <nav>
+      <div class="nav-item active" onclick="showSection('bots')" id="nav-bots">
+        <span class="icon">🤖</span> Bot Pool
+      </div>
+      <div class="nav-item" onclick="showSection('settings')" id="nav-settings">
+        <span class="icon">⚙️</span> Settings
+      </div>
+      <div class="nav-item" onclick="showSection('setup')" id="nav-setup">
+        <span class="icon">📋</span> Setup Guide
+      </div>
+    </nav>
+    <div class="status-pill" id="global-status">
+      <span class="dot" id="status-dot"></span>
+      <span id="status-text">Loading…</span>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+
+    <!-- Bots Section -->
+    <div class="section active" id="section-bots">
+      <div class="page-header">
+        <h1>Bot Pool</h1>
+        <p>Manage your Telegram bots and assign them to projects.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">➕ Add Bot</div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Bot Token (from @BotFather)</label>
+            <input id="new-token" class="mono" type="text" placeholder="123456:ABCdef..." />
+          </div>
+          <button class="btn btn-primary" onclick="addBot()">Add Bot</button>
+        </div>
+        <p style="font-size:12px;color:var(--muted);margin-top:8px;">
+          Create a bot via <code>/newbot</code> on @BotFather, copy the token here.
+        </p>
+      </div>
+
+      <div id="bots-list" class="bot-grid">
+        <div class="empty">
+          <div class="empty-icon">🤖</div>
+          <h3>No bots yet</h3>
+          <p>Add your first bot above.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Section -->
+    <div class="section" id="section-settings">
+      <div class="page-header">
+        <h1>Global Settings</h1>
+        <p>Shared settings applied to all bots and hooks.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">⏱ Timing</div>
+        </div>
+        <div class="settings-grid">
+          <div class="form-group">
+            <label>Wait Seconds (ask timeout)</label>
+            <input id="cfg-wait" type="number" min="10" max="600" />
+          </div>
+          <div class="form-group">
+            <label>Poll Interval (seconds)</label>
+            <input id="cfg-poll" type="number" min="5" max="60" />
+          </div>
+          <div class="form-group">
+            <label>Max Reply Loops</label>
+            <input id="cfg-loops" type="number" min="1" max="10" />
+          </div>
+          <div class="form-group">
+            <label>Summary Language</label>
+            <select id="cfg-lang">
+              <option value="en">English</option>
+              <option value="he">Hebrew</option>
+            </select>
+          </div>
+        </div>
+        <hr />
+        <div class="form-group">
+          <label>Stop Words (comma-separated)</label>
+          <input id="cfg-stop-words" type="text" placeholder="stop, exit, quit, עצור" />
+        </div>
+        <div style="margin-top:16px; display:flex; gap:10px;">
+          <button class="btn btn-primary" onclick="saveConfig()">Save Settings</button>
+          <button class="btn btn-ghost" onclick="loadConfig()">Reset</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Setup Guide Section -->
+    <div class="section" id="section-setup">
+      <div class="page-header">
+        <h1>Setup Guide</h1>
+        <p>Get up and running in 3 steps.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title" style="margin-bottom:16px;">Step 1 — Create a bot via BotFather</div>
+        <ol style="padding-left:20px;line-height:2;font-size:14px;color:var(--muted);">
+          <li>Open Telegram and search for <code>@BotFather</code></li>
+          <li>Send <code>/newbot</code></li>
+          <li>Follow prompts — choose a name and username</li>
+          <li>Copy the token and paste it in the Bot Pool tab</li>
+        </ol>
+      </div>
+
+      <div class="card">
+        <div class="card-title" style="margin-bottom:16px;">Step 2 — Connect your chat</div>
+        <ol style="padding-left:20px;line-height:2;font-size:14px;color:var(--muted);">
+          <li>Open Telegram and find your new bot (search by username)</li>
+          <li>Send <code>/start</code> to the bot</li>
+          <li>Come back here and click <strong>Detect Chat ID</strong> on the bot card</li>
+          <li>Send a test message to verify it works</li>
+        </ol>
+      </div>
+
+      <div class="card">
+        <div class="card-title" style="margin-bottom:16px;">Step 3 — Assign to a project</div>
+        <ol style="padding-left:20px;line-height:2;font-size:14px;color:var(--muted);">
+          <li>Click <strong>Assign Project</strong> on the bot card</li>
+          <li>Enter the absolute path to your project</li>
+          <li>The hook will automatically use this bot when working in that project</li>
+          <li>Unassigned bots act as the global fallback</li>
+        </ol>
+      </div>
+
+      <div class="card">
+        <div class="card-title" style="margin-bottom:16px;">Install hooks</div>
+        <pre>
+# Claude Code stop hook (fires after every response)
+python cursor-telegram-hook/install_claude_code.py install
+
+# Telegram MCP tools (notify, ask, get_status mid-task)
+python cursor-telegram-hook/telegram_mcp/install.py install
+        </pre>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Edit Bot Modal -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal">
+    <div class="modal-title">✏️ Edit Bot</div>
+    <input type="hidden" id="edit-bot-id" />
+    <div class="form-group" style="margin-bottom:14px;">
+      <label>Name</label>
+      <input id="edit-name" type="text" />
+    </div>
+    <div class="form-group" style="margin-bottom:14px;">
+      <label>Assigned Project Path</label>
+      <input id="edit-project" type="text" placeholder="/Users/me/projects/myapp  (leave blank for global fallback)" />
+    </div>
+    <div class="form-group" style="margin-bottom:20px;">
+      <label>Chat ID</label>
+      <input id="edit-chat-id" type="number" placeholder="Auto-detected when you send /start" />
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEdit()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toasts"></div>
+
+<script>
+  let bots = [];
+  let config = {};
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+
+  async function init() {
+    await Promise.all([loadBots(), loadConfig()]);
+  }
+
+  // ── Navigation ────────────────────────────────────────────────────────────
+
+  function showSection(name) {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('section-' + name).classList.add('active');
+    document.getElementById('nav-' + name).classList.add('active');
+  }
+
+  // ── Bots ──────────────────────────────────────────────────────────────────
+
+  async function loadBots() {
+    const res = await fetch('/api/bots');
+    bots = await res.json();
+    renderBots();
+    updateStatusPill();
+  }
+
+  function renderBots() {
+    const el = document.getElementById('bots-list');
+    if (bots.length === 0) {
+      el.innerHTML = `<div class="empty"><div class="empty-icon">🤖</div><h3>No bots yet</h3><p>Add your first bot above.</p></div>`;
+      return;
+    }
+    el.innerHTML = bots.map(bot => `
+      <div class="bot-card" id="bot-${bot.id}">
+        <div class="bot-avatar">${bot.enabled ? '🤖' : '💤'}</div>
+        <div class="bot-info">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="bot-name">${esc(bot.name)}</span>
+            ${bot.chat_id
+              ? '<span class="badge badge-green">● Connected</span>'
+              : '<span class="badge badge-yellow">⚠ No chat</span>'}
+            ${bot.enabled
+              ? '<span class="badge badge-blue">Enabled</span>'
+              : '<span class="badge badge-red">Disabled</span>'}
+          </div>
+          <div class="bot-meta">
+            <span>🔑 ${esc(bot.token_masked)}</span>
+            ${bot.chat_id ? `<span>💬 ${bot.chat_id}</span>` : ''}
+            ${bot.assigned_project
+              ? `<span>📁 <span class="project-chip" title="${esc(bot.assigned_project)}">${esc(shortPath(bot.assigned_project))}</span></span>`
+              : '<span style="color:var(--muted)">📁 Global fallback</span>'}
+            ${bot.last_used ? `<span>🕐 ${timeAgo(bot.last_used)}</span>` : ''}
+          </div>
+        </div>
+        <div class="bot-actions">
+          ${!bot.chat_id ? `<button class="btn btn-ghost btn-sm" onclick="detectChatId('${bot.id}')">Detect Chat ID</button>` : ''}
+          <button class="btn btn-ghost btn-sm" onclick="testBot('${bot.id}')">Test</button>
+          <button class="btn btn-ghost btn-sm" onclick="openEdit('${bot.id}')">Edit</button>
+          <label class="toggle" title="${bot.enabled ? 'Disable' : 'Enable'}">
+            <input type="checkbox" ${bot.enabled ? 'checked' : ''} onchange="toggleBot('${bot.id}', this.checked)" />
+            <span class="slider"></span>
+          </label>
+          <button class="btn btn-icon" onclick="deleteBot('${bot.id}')" title="Delete">🗑</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function updateStatusPill() {
+    const enabled = bots.filter(b => b.enabled && b.chat_id).length;
+    const dot = document.getElementById('status-dot');
+    const txt = document.getElementById('status-text');
+    if (enabled > 0) {
+      dot.className = 'dot on';
+      txt.textContent = `${enabled} bot${enabled > 1 ? 's' : ''} active`;
+    } else {
+      dot.className = 'dot';
+      txt.textContent = 'No active bots';
+    }
+  }
+
+  async function addBot() {
+    const token = document.getElementById('new-token').value.trim();
+    if (!token) return toast('Enter a bot token', 'error');
+    const res = await fetch('/api/bots', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({token})
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      return toast(err.detail || 'Failed to add bot', 'error');
+    }
+    document.getElementById('new-token').value = '';
+    toast('Bot added successfully!', 'success');
+    await loadBots();
+  }
+
+  async function deleteBot(id) {
+    if (!confirm('Delete this bot?')) return;
+    await fetch(`/api/bots/${id}`, {method: 'DELETE'});
+    toast('Bot deleted', 'success');
+    await loadBots();
+  }
+
+  async function toggleBot(id, enabled) {
+    await fetch(`/api/bots/${id}`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({enabled})
+    });
+    await loadBots();
+  }
+
+  async function testBot(id) {
+    const res = await fetch(`/api/bots/${id}/test`, {method: 'POST'});
+    if (res.ok) {
+      toast('Test message sent! Check Telegram.', 'success');
+    } else {
+      const err = await res.json();
+      toast(err.detail || 'Test failed', 'error');
+    }
+  }
+
+  async function detectChatId(id) {
+    toast('Checking for recent messages…', 'success');
+    const res = await fetch(`/api/bots/${id}/chat_id`);
+    const data = await res.json();
+    if (data.found) {
+      toast(`Chat ID set: ${data.chat_id}`, 'success');
+      await loadBots();
+    } else {
+      toast('No message found. Send /start to the bot on Telegram first.', 'error');
+    }
+  }
+
+  // ── Edit Modal ────────────────────────────────────────────────────────────
+
+  function openEdit(id) {
+    const bot = bots.find(b => b.id === id);
+    if (!bot) return;
+    document.getElementById('edit-bot-id').value = id;
+    document.getElementById('edit-name').value = bot.name || '';
+    document.getElementById('edit-project').value = bot.assigned_project || '';
+    document.getElementById('edit-chat-id').value = bot.chat_id || '';
+    document.getElementById('edit-modal').classList.add('open');
+  }
+
+  function closeModal() {
+    document.getElementById('edit-modal').classList.remove('open');
+  }
+
+  async function saveEdit() {
+    const id = document.getElementById('edit-bot-id').value;
+    const name = document.getElementById('edit-name').value.trim();
+    const project = document.getElementById('edit-project').value.trim();
+    const chatIdRaw = document.getElementById('edit-chat-id').value.trim();
+
+    const payload = {};
+    if (name) payload.name = name;
+    payload.assigned_project = project || null;
+    if (chatIdRaw) payload.chat_id = parseInt(chatIdRaw);
+
+    const res = await fetch(`/api/bots/${id}`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      toast('Bot updated', 'success');
+      closeModal();
+      await loadBots();
+    } else {
+      const err = await res.json();
+      toast(err.detail || 'Update failed', 'error');
+    }
+  }
+
+  // ── Config ────────────────────────────────────────────────────────────────
+
+  async function loadConfig() {
+    const res = await fetch('/api/config');
+    config = await res.json();
+    document.getElementById('cfg-wait').value = config.wait_seconds ?? 120;
+    document.getElementById('cfg-poll').value = config.poll_interval ?? 10;
+    document.getElementById('cfg-loops').value = config.max_loops ?? 3;
+    document.getElementById('cfg-lang').value = config.language ?? 'en';
+    const sw = config.stop_words ?? [];
+    document.getElementById('cfg-stop-words').value = Array.isArray(sw) ? sw.join(', ') : sw;
+  }
+
+  async function saveConfig() {
+    const stopWordsRaw = document.getElementById('cfg-stop-words').value;
+    const stop_words = stopWordsRaw.split(',').map(s => s.trim()).filter(Boolean);
+    const payload = {
+      wait_seconds: parseInt(document.getElementById('cfg-wait').value),
+      poll_interval: parseInt(document.getElementById('cfg-poll').value),
+      max_loops: parseInt(document.getElementById('cfg-loops').value),
+      language: document.getElementById('cfg-lang').value,
+      stop_words,
+    };
+    const res = await fetch('/api/config', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      toast('Settings saved', 'success');
+    } else {
+      toast('Failed to save', 'error');
+    }
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function shortPath(p) {
+    if (!p) return '';
+    const parts = p.split('/');
+    return parts.length > 3 ? '…/' + parts.slice(-2).join('/') : p;
+  }
+
+  function timeAgo(iso) {
+    const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+    return `${Math.floor(diff/86400)}d ago`;
+  }
+
+  function toast(msg, type = 'success') {
+    const el = document.createElement('div');
+    el.className = `toast toast-${type}`;
+    el.innerHTML = `<span>${type === 'success' ? '✓' : '✗'}</span> ${esc(msg)}`;
+    document.getElementById('toasts').appendChild(el);
+    setTimeout(() => el.remove(), 3500);
+  }
+
+  // Close modal on overlay click
+  document.getElementById('edit-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+  });
+
+  init();
+</script>
+</body>
+</html>
